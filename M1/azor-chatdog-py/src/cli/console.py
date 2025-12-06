@@ -53,9 +53,10 @@ def print_help(message: str):
     print(Fore.YELLOW + message + Style.RESET_ALL)
 
 
-def display_help(session_id: str):
+def display_help(session_id: str, session_title: str | None = None):
     """Displays a short help message."""
     print_info(f"Aktualna sesja (ID): {session_id}")
+    print_info(f"Tytuł sesji: {session_title}")
     print_info(f"Pliki sesji są zapisywane na bieżąco w: {LOG_DIR}")
     print_help("Dostępne komendy (slash commands):")
     print_help("  /switch <ID>      - Przełącza na istniejącą sesję.")

@@ -157,7 +157,7 @@ class SessionManager:
             assistant = create_azor_assistant()
             session = ChatSession(assistant=assistant)
             self._current_session = session
-            console.display_help(session.session_id)
+            console.display_help(session.session_id, session.title)
         
         return session
     

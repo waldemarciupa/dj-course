@@ -37,6 +37,8 @@ class ChatSession:
         self.assistant = assistant
         self.session_id = session_id or str(uuid.uuid4())
         self._history = history or []
+        # Optional human-readable title for the session, generated from first prompt
+        self.title: str | None = None
         self._llm_client: Union[GeminiLLMClient, LlamaClient, OpenAILLMClient, None] = None
         self._llm_chat_session = None
         self._max_context_tokens = 32768
@@ -79,12 +81,14 @@ class ChatSession:
         Returns:
             tuple: (ChatSession object or None, error_message or None)
         """
-        history, error = session_files.load_session_history(session_id)
-        
+        history, title, error = session_files.load_session_history(session_id)
+
         if error:
             return None, error
-        
+
         session = cls(assistant=assistant, session_id=session_id, history=history)
+        # restore title if present
+        session.title = title
         return session, None
     
     def save_to_file(self) -> tuple[bool, str | None]:
@@ -100,10 +104,11 @@ class ChatSession:
             self._history = self._llm_chat_session.get_history()
         
         return session_files.save_session_history(
-            self.session_id, 
-            self._history, 
-            self.assistant.system_prompt, 
-            self._llm_client.get_model_name()
+            self.session_id,
+            self._history,
+            self.assistant.system_prompt,
+            self._llm_client.get_model_name(),
+            title=self.title
         )
     
     def send_message(self, text: str):
@@ -120,6 +125,18 @@ class ChatSession:
         if not self._llm_chat_session:
             raise RuntimeError("LLM session not initialized")
         
+        # If session has no title yet and this is the first user prompt, generate a title
+        if not self.title and self.is_empty():
+            try:
+                gen_title = self._generate_title_from_prompt(text)
+                if gen_title:
+                    self.title = gen_title
+                    # Persist title immediately so subsequent loads see it
+                    self.save_to_file()
+            except Exception:
+                # Title generation is non-critical; ignore failures
+                pass
+
         response = self._llm_chat_session.send_message(text)
         
         # Sync history after message
@@ -141,6 +158,39 @@ class ChatSession:
             pass
         
         return response
+
+    def _generate_title_from_prompt(self, prompt_text: str) -> str | None:
+        """
+        Generates a short title based on a user's prompt using a temporary LLM chat session.
+        This method does not modify the main chat session history.
+        """
+        if not self._llm_client:
+            return None
+
+        system_instruction = (
+            "You are a helpful assistant that creates a concise (max 8 words) title summarizing the user's prompt. "
+            "Return only the title text without surrounding quotes or punctuation."
+        )
+
+        tmp_chat = self._llm_client.create_chat_session(
+            system_instruction=system_instruction,
+            history=[],
+            thinking_budget=0
+        )
+
+        try:
+            resp = tmp_chat.send_message(prompt_text)
+            title = getattr(resp, 'text', None) or None
+            if title:
+                # basic cleanup: strip, single-line, limit length
+                title = title.strip().split('\n')[0]
+                if len(title) > 120:
+                    title = title[:120].rsplit(' ', 1)[0]
+                return title
+        except Exception:
+            return None
+
+        return None
     
     def get_history(self) -> List[Any]:
         """Returns the current conversation history."""

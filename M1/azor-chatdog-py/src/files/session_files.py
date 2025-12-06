@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Any, Dict
 from files.config import LOG_DIR
 
-def load_session_history(session_id: str) -> tuple[List[Dict], str | None]:
+def load_session_history(session_id: str) -> tuple[List[Dict], str | None, str | None]:
     """
     Loads session history from a JSON file in universal format.
     
@@ -15,13 +15,13 @@ def load_session_history(session_id: str) -> tuple[List[Dict], str | None]:
     
     log_filename = os.path.join(LOG_DIR, f"{session_id}-log.json")
     if not os.path.exists(log_filename):
-        return [], f"Session log file '{log_filename}' does not exist. Starting new session."
+        return [], None, f"Session log file '{log_filename}' does not exist. Starting new session."
 
     try:
         with open(log_filename, 'r', encoding='utf-8') as f:
             log_data = json.load(f)
     except json.JSONDecodeError:
-        return [], f"Cannot decode log file '{log_filename}'. Starting new session."
+        return [], None, f"Cannot decode log file '{log_filename}'. Starting new session."
 
     # Convert JSON data to universal format (dictionaries)
     # This format works with both Gemini and LLaMA clients
@@ -33,9 +33,12 @@ def load_session_history(session_id: str) -> tuple[List[Dict], str | None]:
         }
         history.append(content)
 
-    return history, None
+    # Try to extract title if present in log
+    title = log_data.get('title') if isinstance(log_data, dict) else None
 
-def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str) -> tuple[bool, str | None]:
+    return history, title, None
+
+def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str, title: str | None = None) -> tuple[bool, str | None]:
     """
     Saves the current session history to a JSON file,
     only if the history contains at least one complete turn (User + Model).
@@ -54,7 +57,7 @@ def save_session_history(session_id: str, history: List[Dict], system_prompt: st
         return True, None
 
     log_filename = os.path.join(LOG_DIR, f"{session_id}-log.json")
-
+    
     json_history = []
     for content in history:
         # Handle universal format (dictionaries) from both Gemini and LLaMA clients
@@ -75,7 +78,8 @@ def save_session_history(session_id: str, history: List[Dict], system_prompt: st
         'session_id': session_id,
         'model': model_name,
         'system_role': system_prompt,
-        'history': json_history
+        'history': json_history,
+        'title': title
     }
 
     try:
