@@ -16,6 +16,7 @@ function displayStats() {
     let gotchaChart = null;
 
     let intervalId = null;
+    let gotchaFilter = 'allTime'; // 'today', 'thisWeek', 'thisMonth', 'allTime'
 
     function formatTime(seconds) {
         const hours = Math.floor(seconds / 3600);
@@ -25,8 +26,8 @@ function displayStats() {
     }
 
     function updateStats() {
-        chrome.storage.local.get(['timeData', 'gotchaStats'], (result) => {
-            // Time Stats
+        chrome.storage.local.get(['timeData', 'blockEvents'], (result) => {
+            // Time Stats (existing logic)
             timeStatsList.innerHTML = '';
             const timeData = result.timeData || {};
             const sortedTimeSites = Object.entries(timeData).sort((a, b) => b[1] - a[1]);
@@ -37,24 +38,26 @@ function displayStats() {
             } else {
                 document.getElementById('timeChart').style.display = 'block';
                 sortedTimeSites.forEach(([site, time]) => {
-                    const statItem = createStatItem(site, formatTime(time), timeChart, timeStatsList);
+                    const statItem = createStatItem(site, formatTime(time), 'timeData', timeChart, timeStatsList);
                     timeStatsList.appendChild(statItem);
                 });
                 renderPieChart(sortedTimeSites);
             }
 
-            // Gotcha Stats
+            // "Gotcha" Stats (refactored logic)
             gotchaStatsList.innerHTML = '';
-            const gotchaData = result.gotchaStats || {};
+            const blockEvents = result.blockEvents || [];
+            const filteredEvents = filterBlockEvents(blockEvents, gotchaFilter);
+            const gotchaData = aggregateBlockEvents(filteredEvents);
             const sortedGotchaSites = Object.entries(gotchaData).sort((a, b) => b[1] - a[1]);
 
             if (sortedGotchaSites.length === 0) {
-                gotchaStatsList.innerHTML = '<div class="stat-item">No "gotcha" data yet.</div>';
+                gotchaStatsList.innerHTML = '<div class="stat-item">No "gotcha" data for this period.</div>';
                 document.getElementById('gotchaChart').style.display = 'none';
             } else {
                 document.getElementById('gotchaChart').style.display = 'block';
                 sortedGotchaSites.forEach(([site, count]) => {
-                    const statItem = createStatItem(site, `${count} times`, gotchaChart, gotchaStatsList);
+                    const statItem = createStatItem(site, `${count} times`, 'blockEvents', gotchaChart, gotchaStatsList);
                     gotchaStatsList.appendChild(statItem);
                 });
                 renderGotchaChart(sortedGotchaSites);
@@ -62,59 +65,71 @@ function displayStats() {
         });
     }
 
-    function removeStatEntry(statType, siteToRemove) {
-        chrome.storage.local.get([statType], (result) => {
-            const stats = result[statType];
-            if (stats && stats[siteToRemove]) {
-                delete stats[siteToRemove];
-                let dataToSet = {};
-                dataToSet[statType] = stats;
-                chrome.storage.local.set(dataToSet, () => {
-                    updateStats();
-                });
-            }
-        });
+    function filterBlockEvents(events, filter) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        switch (filter) {
+            case 'today':
+                return events.filter(event => new Date(event.timestamp) >= today);
+            case 'thisWeek':
+                const firstDayOfWeek = new Date(today);
+                firstDayOfWeek.setDate(today.getDate() - today.getDay());
+                return events.filter(event => new Date(event.timestamp) >= firstDayOfWeek);
+            case 'thisMonth':
+                const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                return events.filter(event => new Date(event.timestamp) >= firstDayOfMonth);
+            case 'allTime':
+            default:
+                return events;
+        }
     }
 
-    function createStatItem(site, value, chart, listElement) {
+    function aggregateBlockEvents(events) {
+        return events.reduce((acc, event) => {
+            acc[event.domain] = (acc[event.domain] || 0) + 1;
+            return acc;
+        }, {});
+    }
+
+    function createStatItem(site, value, statType, chart, listElement) {
         const statItem = document.createElement('div');
         statItem.className = 'stat-item';
         statItem.dataset.site = site;
-
+    
         if (chart) {
             const index = chart.data.labels.indexOf(site);
             if (index !== -1 && !chart.getDataVisibility(index)) {
                 statItem.classList.add('disabled');
             }
         }
-
+    
         const siteText = document.createElement('span');
         siteText.textContent = site;
-
+    
         const valueContainer = document.createElement('div');
         valueContainer.className = 'value-container';
-
+    
         const valueText = document.createElement('span');
         valueText.textContent = value;
-
+    
         const deleteBtn = document.createElement('span');
         deleteBtn.className = 'delete-stat-btn';
         deleteBtn.textContent = '❌';
-
+    
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const statType = listElement.id === 'statsList' ? 'timeData' : 'gotchaStats';
             if (confirm(`Are you sure you want to delete stats for "${site}"?`)) {
                 removeStatEntry(statType, site);
             }
         });
-
+    
         valueContainer.appendChild(valueText);
         valueContainer.appendChild(deleteBtn);
-
+    
         statItem.appendChild(siteText);
         statItem.appendChild(valueContainer);
-
+    
         statItem.addEventListener('click', () => {
             if (!chart) return;
             const index = chart.data.labels.indexOf(site);
@@ -124,23 +139,24 @@ function displayStats() {
                 statItem.classList.toggle('disabled', !chart.getDataVisibility(index));
             }
         });
-
-        statItem.addEventListener('mouseover', () => {
-            if (!chart) return;
-            const index = chart.data.labels.indexOf(site);
-            if (index !== -1) {
-                chart.setActiveElements([{ datasetIndex: 0, index: index }]);
-                chart.update();
-            }
-        });
-
-        statItem.addEventListener('mouseout', () => {
-            if (!chart) return;
-            chart.setActiveElements([]);
-            chart.update();
-        });
-
+    
         return statItem;
+    }
+    
+
+    function removeStatEntry(statType, siteToRemove) {
+        chrome.storage.local.get([statType], (result) => {
+            let stats = result[statType];
+            if (statType === 'blockEvents') {
+                stats = stats.filter(event => event.domain !== siteToRemove);
+            } else { // timeData
+                delete stats[siteToRemove];
+            }
+            
+            let dataToSet = {};
+            dataToSet[statType] = stats;
+            chrome.storage.local.set(dataToSet, updateStats);
+        });
     }
 
     function renderPieChart(data) {
@@ -188,20 +204,7 @@ function displayStats() {
                         position: 'top',
                         labels: {
                             color: 'white'
-                        },
-                        onClick: (e, legendItem, legend) => {
-                            const index = legendItem.index;
-                            const ci = legend.chart;
-                            
-                            ci.toggleDataVisibility(index);
-                            ci.update();
-
-                            const isVisible = ci.getDataVisibility(index);
-                            const statItem = timeStatsList.querySelector(`.stat-item[data-site="${legendItem.text}"]`);
-                            if (statItem) {
-                                statItem.classList.toggle('disabled', !isVisible);
-                            }
-                        },
+                        }
                     },
                     tooltip: {
                         callbacks: {
@@ -284,7 +287,7 @@ function displayStats() {
 
     clearGotchaStatsBtn.addEventListener('click', () => {
         if (confirm('Are you sure you want to clear all "gotcha" statistics? This cannot be undone.')) {
-            chrome.storage.local.set({ gotchaStats: {} }, () => {
+            chrome.storage.local.set({ blockEvents: [] }, () => {
                 if (gotchaChart) {
                     gotchaChart.destroy();
                     gotchaChart = null;
@@ -293,6 +296,19 @@ function displayStats() {
             });
         }
     });
+
+    // Filter button event listeners
+    document.getElementById('today').addEventListener('click', () => setGotchaFilter('today'));
+    document.getElementById('thisWeek').addEventListener('click', () => setGotchaFilter('thisWeek'));
+    document.getElementById('thisMonth').addEventListener('click', () => setGotchaFilter('thisMonth'));
+    document.getElementById('allTime').addEventListener('click', () => setGotchaFilter('allTime'));
+
+    function setGotchaFilter(filter) {
+        gotchaFilter = filter;
+        document.querySelectorAll('.button-group button').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(filter).classList.add('active');
+        updateStats();
+    }
 
     // Initial update
     updateStats();
@@ -305,7 +321,9 @@ function displayStats() {
         if (document.hidden) {
             clearInterval(intervalId);
         } else {
+            // Initial update on visibility change
+            updateStats();
             intervalId = setInterval(updateStats, 5000);
         }
     });
-} 
+}

@@ -139,6 +139,24 @@
         .scrollbar::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.5);
         }
+
+        .button-group {
+            margin-bottom: 20px;
+        }
+
+        .button-group button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 0 5px;
+        }
+
+        .button-group button:hover, .button-group button.active {
+            background: rgba(255, 255, 255, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -158,6 +176,12 @@
         <div class="stats-column">
             <h1>🫣 "Gotcha" Counter</h1>
             <h2>How many times you tried to access blocked sites</h2>
+            <div class="button-group">
+                <button id="today">Today</button>
+                <button id="thisWeek">This Week</button>
+                <button id="thisMonth">This Month</button>
+                <button id="allTime" class="active">All Time</button>
+            </div>
             <div class="chart-container">
                 <canvas id="gotchaChart"></canvas>
             </div>
