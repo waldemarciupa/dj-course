@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS driver_availability;
+DROP TABLE IF EXISTS vehicle_availability;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS order_timeline_events;
 DROP TABLE IF EXISTS transportation_orders;
@@ -47,7 +49,32 @@ CREATE TABLE transportation_orders (
     shipping_zip_code VARCHAR(20),
     shipping_method VARCHAR(50),
     tracking_number VARCHAR(50),
+    assigned_driver_id INT REFERENCES drivers(id),
+    assigned_vehicle_id INT REFERENCES vehicles(id),
     FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+
+CREATE TABLE driver_availability (
+    id INT PRIMARY KEY,
+    driver_id INT NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    status VARCHAR(32) NOT NULL CHECK (status IN ('available', 'unavailable', 'on_leave', 'assigned')),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
+);
+
+CREATE TABLE vehicle_availability (
+    id INT PRIMARY KEY,
+    vehicle_id INT NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    status VARCHAR(32) NOT NULL CHECK (status IN ('available', 'in_maintenance', 'reserved', 'assigned')),
+    location VARCHAR(255),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
 );
 
 CREATE TABLE order_timeline_events (
@@ -76,3 +103,7 @@ CREATE INDEX idx_timeline_order ON order_timeline_events(order_id);
 CREATE INDEX idx_items_order ON order_items(order_id);
 CREATE INDEX idx_orders_customer ON transportation_orders(customer_id);
 CREATE INDEX idx_orders_status ON transportation_orders(status);
+CREATE INDEX idx_driver_availability_driver_id ON driver_availability(driver_id);
+CREATE INDEX idx_driver_availability_status ON driver_availability(status);
+CREATE INDEX idx_vehicle_availability_vehicle_id ON vehicle_availability(vehicle_id);
+CREATE INDEX idx_vehicle_availability_status ON vehicle_availability(status);
